@@ -155,7 +155,16 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	requestedUserId := r.PathValue("id")
 	requestedUserUuid := uuid.FromStringOrNil(requestedUserId)
 	// check if the request context has enough permissions (self view or admin view)
-	ctxUser := r.Context().Value(middlewares.UserContext{}).(*models.UserModel)
+	ctxVal := r.Context().Value(middlewares.UserContext{})
+	if ctxVal == nil {
+		helpers.Response(w, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+		return
+	}
+	ctxUser, ok := ctxVal.(*models.UserModel)
+	if !ok || ctxUser == nil {
+		helpers.Response(w, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+		return
+	}
 	if !slices.Contains(ctxUser.Roles, "admin") && requestedUserUuid != ctxUser.ID {
 		helpers.Response(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
 		return
