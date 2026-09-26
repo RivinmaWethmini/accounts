@@ -59,6 +59,38 @@ const docTemplate = `{
                 }
             }
         },
+        "/authorize/confirm": {
+            "get": {
+                "description": "Called after the user explicitly confirms a new/unrecognized redirect destination on the frontend confirmation page. Records consent for future silent redirects to the same host, then completes the authorization flow.",
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Confirm redirect and complete the authentication flow",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "URL encoded redirect url",
+                        "name": "redirect",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Redirect to the provided URL with temporary code in query param 'code'"
+                    },
+                    "400": {
+                        "description": "Bad Request - invalid redirect URL"
+                    },
+                    "401": {
+                        "description": "Not logged in"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
         "/connections/github/": {
             "delete": {
                 "security": [
