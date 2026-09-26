@@ -8,6 +8,7 @@ import { AuthProvider } from "./contexts/auth";
 import PrivateRoute from "./components/privateRoute";
 import AdminDashboard from "./pages/admin/dashboard";
 import { AlertProvider } from "./contexts/alert";
+import RedirectConfirm from "./pages/redirectConfirm";
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
           <Routes>
             <Route path="login" element={<Login />} />
             <Route path="signup" element={<Signup />} />
+            <Route path="redirect/confirm" element={<RedirectConfirm />} />
             <Route
               element={
                 <div className="min-h-screen">

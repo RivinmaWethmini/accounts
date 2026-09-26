@@ -81,6 +81,11 @@ func Authorize(w http.ResponseWriter, r *http.Request) {
 		helpers.Response(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if redirect_uri.Scheme != "http" && redirect_uri.Scheme != "https" {
+		helpers.Response(w, http.StatusBadRequest, "redirect must use http or https")
+		return
+	}
+
 	refreshToken, err := r.Cookie("refreshToken")
 	if err != nil {
 		http.Redirect(w, r, "/login?redirect="+r.URL.String(), http.StatusTemporaryRedirect)
@@ -92,15 +97,83 @@ func Authorize(w http.ResponseWriter, r *http.Request) {
 		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 		return
 	}
+	userID := claims["id"].(string)
 
-	code, err := createAndStoreCode(claims["id"].(string))
+	consentModel := models.ConsentedRedirectModel{UserID: userID, Host: redirect_uri.Host}
+	consented, err := consentModel.Exists()
+	if err != nil {
+		log.Println(err.Error())
+		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		return
+	}
 
+	if !consented {
+		// First time seeing this host for this user — send them to the
+		// frontend confirmation page instead of redirecting silently.
+		confirmURL := "/redirect/confirm?redirect=" + url.QueryEscape(redirect)
+		http.Redirect(w, r, confirmURL, http.StatusTemporaryRedirect)
+		return
+	}
+
+	issueCodeAndRedirect(w, r, userID, redirect_uri)
+}
+
+// @tags        Auth
+// @summary     Confirm redirect and complete the authentication flow
+// @description Called after the user explicitly confirms a new/unrecognized \
+// @description redirect destination on the frontend confirmation page. \
+// @description Records consent for future silent redirects to the same host, \
+// @description then completes the authorization flow.
+// @param       redirect query string true "URL encoded redirect url"
+// @success     302 "Redirect to the provided URL with temporary code in query param 'code'"
+// @failure     400 "Bad Request - invalid redirect URL"
+// @failure     401 "Not logged in"
+// @failure     500 "Internal Server Error"
+// @router      /authorize/confirm [GET]
+func AuthorizeConfirm(w http.ResponseWriter, r *http.Request) {
+	redirect := r.URL.Query().Get("redirect")
+	redirect_uri, err := url.ParseRequestURI(redirect)
+	if err != nil {
+		helpers.Response(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if redirect_uri.Scheme != "http" && redirect_uri.Scheme != "https" {
+		helpers.Response(w, http.StatusBadRequest, "redirect must use http or https")
+		return
+	}
+
+	refreshToken, err := r.Cookie("refreshToken")
+	if err != nil {
+		helpers.Response(w, http.StatusUnauthorized, "not logged in")
+		return
+	}
+	claims, err := helpers.GetClaimsFromToken(refreshToken.Value)
+	if err != nil {
+		log.Println(err.Error())
+		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		return
+	}
+	userID := claims["id"].(string)
+
+	consentModel := models.ConsentedRedirectModel{UserID: userID, Host: redirect_uri.Host}
+	if _, err := consentModel.Insert(); err != nil {
+		log.Println(err.Error())
+		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		return
+	}
+
+	issueCodeAndRedirect(w, r, userID, redirect_uri)
+}
+
+// issueCodeAndRedirect generates a short-lived auth code and redirects the
+// browser to the given redirect_uri with the code attached.
+func issueCodeAndRedirect(w http.ResponseWriter, r *http.Request, userID string, redirect_uri *url.URL) {
+	code, err := createAndStoreCode(userID)
 	if err != nil {
 		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 		return
 	}
 	query := redirect_uri.Query()
-
 	query.Add("code", base64.URLEncoding.EncodeToString(code))
 	redirect_uri.RawQuery = query.Encode()
 	http.Redirect(w, r, redirect_uri.String(), http.StatusTemporaryRedirect)

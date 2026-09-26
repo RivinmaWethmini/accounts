@@ -15,6 +15,7 @@ func (b AuthRoutes) Routes() chi.Router {
 
 	r.Route("/", func(authRoutes chi.Router) {
 		authRoutes.Get("/authorize", authHandlers.Authorize)
+		authRoutes.Get("/authorize/confirm", authHandlers.AuthorizeConfirm)
 		authRoutes.With(middlewares.AuthHandler).With(middlewares.RequireLogin).Get("/session", authHandlers.GetSession)
 		authRoutes.Post("/login", authHandlers.Login)
 		authRoutes.Post("/logout", authHandlers.Logout)
