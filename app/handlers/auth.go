@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -259,11 +261,44 @@ type LoginRequestBody struct {
 // @success 	200 {object} helpers.SuccessResponseModel{data=object{token=string}} "Access token returned in response body; refresh token is set in cookie 'refreshToken'"
 // @failure     400 "Invalid request body"
 // @failure     401 "Invalid credentials"
+// @failure     429 "Too many login attempts"
 // @failure     500 "Internal Server error"
 // @router      /login [POST]
 func Login(w http.ResponseWriter, r *http.Request) {
 	c := config.GetConfig()
 	defer r.Body.Close()
+
+	// Extract client IP address for rate limiting
+	clientIP := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		clientIP = strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	} else if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		clientIP = strings.TrimSpace(realIP)
+	} else if host, _, err := net.SplitHostPort(clientIP); err == nil {
+		clientIP = host
+	}
+
+	redisClient := db.ConnectRedis()
+	defer redisClient.Close()
+
+	rateLimitKey := "accounts:ratelimit:login:" + clientIP
+	attempts, err := redisClient.Incr(r.Context(), rateLimitKey).Result()
+	if err == nil {
+		if attempts == 1 {
+			redisClient.Expire(r.Context(), rateLimitKey, 1*time.Minute)
+		}
+		if attempts > 5 {
+			ttl, _ := redisClient.TTL(r.Context(), rateLimitKey).Result()
+			retryAfter := int(ttl.Seconds())
+			if retryAfter < 1 {
+				retryAfter = 60
+			}
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
+			helpers.Response(w, http.StatusTooManyRequests, "Too many login attempts. Please try again later.")
+			return
+		}
+	}
+
 	var requestBody LoginRequestBody
 
 	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -292,6 +327,9 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		helpers.Response(w, http.StatusUnauthorized, "Invalid credentials")
 		return
 	}
+
+	// Reset failed attempts counter on successful login
+	redisClient.Del(r.Context(), rateLimitKey)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refreshToken",
