@@ -10,12 +10,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
+	"strings"
 	"time"
 
 	"github.com/gofrs/uuid"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/sliitmozilla/accounts/app/middlewares"
 	"github.com/sliitmozilla/accounts/config"
@@ -93,8 +91,12 @@ func Authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	claims, err := helpers.GetClaimsFromToken(refreshToken.Value)
 	if err != nil {
-		log.Println(err.Error())
-		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		http.Redirect(w, r, "/login?redirect="+r.URL.String(), http.StatusTemporaryRedirect)
+		return
+	}
+	tokenType, ok := claims["type"].(string)
+	if !ok || tokenType != "refresh" {
+		http.Redirect(w, r, "/login?redirect="+r.URL.String(), http.StatusTemporaryRedirect)
 		return
 	}
 	userID := claims["id"].(string)
@@ -149,8 +151,12 @@ func AuthorizeConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	claims, err := helpers.GetClaimsFromToken(refreshToken.Value)
 	if err != nil {
-		log.Println(err.Error())
-		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		helpers.Response(w, http.StatusUnauthorized, "not logged in")
+		return
+	}
+	tokenType, ok := claims["type"].(string)
+	if !ok || tokenType != "refresh" {
+		helpers.Response(w, http.StatusUnauthorized, "invalid token type")
 		return
 	}
 	userID := claims["id"].(string)
@@ -325,16 +331,19 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func getAccessTokenFromRefresh(refreshToken string) (string, error) {
-	godotenv.Load()
-	jwtSecret := os.Getenv("JWT_SECRET")
-	tokenString := refreshToken
-	claims := jwt.MapClaims{}
-	if _, err := jwt.ParseWithClaims(tokenString, claims, func(*jwt.Token) (interface{}, error) {
-		return []byte(jwtSecret), nil
-	}); err != nil {
+	claims, err := helpers.GetClaimsFromToken(refreshToken)
+	if err != nil {
 		return "", err
 	}
-	id := uuid.FromStringOrNil(claims["id"].(string))
+	tokenType, ok := claims["type"].(string)
+	if !ok || tokenType != "refresh" {
+		return "", errors.New("invalid token type: expected refresh token")
+	}
+	idStr, ok := claims["id"].(string)
+	if !ok {
+		return "", errors.New("invalid token")
+	}
+	id := uuid.FromStringOrNil(idStr)
 	if id == uuid.Nil {
 		return "", errors.New("invalid token")
 	}
@@ -358,7 +367,6 @@ func getAccessTokenFromRefresh(refreshToken string) (string, error) {
 // @failure     500 "Internal Server Error"
 // @router      /token/refresh [POST]
 func RefreshToken(w http.ResponseWriter, r *http.Request) {
-	// todo: right now you can probably pass an access token and this endpoint would still work
 	token, err := r.Cookie("refreshToken")
 	if err != nil {
 		if err == http.ErrNoCookie {
@@ -372,8 +380,8 @@ func RefreshToken(w http.ResponseWriter, r *http.Request) {
 
 	accessToken, err := getAccessTokenFromRefresh(token.Value)
 	if err != nil {
-		if err.Error() == "invalid token" {
-			helpers.Response(w, http.StatusUnauthorized, err.Error())
+		if err.Error() == "invalid token" || strings.HasPrefix(err.Error(), "invalid token type") {
+			helpers.Response(w, http.StatusUnauthorized, "Invalid refresh token")
 			return
 		} else if _, ok := err.(apiErrors.NotFoundError); ok {
 			helpers.Response(w, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
