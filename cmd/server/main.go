@@ -9,12 +9,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/sliitmozilla/accounts/app/router"
 	"github.com/sliitmozilla/accounts/config"
+	"github.com/sliitmozilla/accounts/helpers"
 )
 
 func main() {
 	c := config.GetConfig()
 	r := chi.NewRouter()
 	dir, _ := os.Getwd()
+
+	helpers.MustLoadJWTSecret()
 
 	r.Mount("/api", router.SetupRoutes())
 
