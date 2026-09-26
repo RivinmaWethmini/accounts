@@ -236,6 +236,7 @@ func GetToken(w http.ResponseWriter, r *http.Request) {
 		Name:     "refreshToken",
 		Value:    refreshToken,
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(c.Lifespan.RefreshToken + time.Second),
 	})
@@ -296,6 +297,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		Name:     "refreshToken",
 		Value:    refreshToken,
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(c.Lifespan.RefreshToken * time.Second),
 	})
@@ -316,6 +318,7 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 	helpers.Response(w, http.StatusOK, http.StatusText(http.StatusOK))
