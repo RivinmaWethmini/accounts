@@ -1,14 +1,53 @@
 package helpers
 
 import (
+	"bufio"
+	"log"
 	"os"
+	"strings"
 	"time"
+
+	_ "embed"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/joho/godotenv"
 	"github.com/sliitmozilla/accounts/config"
 	"golang.org/x/crypto/bcrypt"
 )
+
+//go:embed jwt.secrets.list
+var wellKnownSecretsList string
+
+func MustLoadJWTSecret() {
+	godotenv.Load()
+	jwtSecret := os.Getenv("JWT_SECRET")
+
+	if len(jwtSecret) < 32 {
+		log.Fatal("JWT_SECRET is missing or too short: it must be at least 32 bytes long. Generate one with: openssl rand -base64 32")
+	}
+
+	// load well known secrets list
+	file, err := os.Open("helpers/jwt.secrets.list")
+	if err != nil {
+		log.Println(err)
+		panic("Error loading well known secrets list. Aborting")
+	}
+	defer file.Close()
+
+	wellKnownSecrets := make(map[string]struct{})
+	scanner := bufio.NewScanner(strings.NewReader(wellKnownSecretsList))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		wellKnownSecrets[line] = struct{}{}
+	}
+
+	if _, isWeak := wellKnownSecrets[jwtSecret]; isWeak {
+		log.Fatal("JWT_SECRET found in well known secrets list. Generate one with: openssl rand -base64 32")
+	}
+}
 
 func HashPassword(password string) string {
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
