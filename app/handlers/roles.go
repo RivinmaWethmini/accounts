@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/sliitmozilla/accounts/db/models"
 	errors "github.com/sliitmozilla/accounts/errors"
@@ -56,8 +57,8 @@ func CreateRole(w http.ResponseWriter, r *http.Request) {
 		helpers.Response(w, http.StatusBadRequest, "Invalid or empty body")
 		return
 	}
-	if role.Name == "admin" {
-		helpers.Response(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
+	if strings.EqualFold(strings.TrimSpace(createRoleBody.Name), "admin") {
+		helpers.Response(w, http.StatusForbidden, "Attempting to create admin role")
 		return
 	}
 	if errs := helpers.Validate(createRoleBody); errs != nil {
@@ -104,8 +105,8 @@ func UpdateRole(w http.ResponseWriter, r *http.Request) {
 	originalRole := models.RoleModel{Name: role}
 	var newRole UpdateRoleBody
 
-	if role == "admin" {
-		helpers.Response(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
+	if strings.EqualFold(strings.TrimSpace(role), "admin") {
+		helpers.Response(w, http.StatusForbidden, "Attempt to modify admin role")
 		return
 	}
 
@@ -113,8 +114,8 @@ func UpdateRole(w http.ResponseWriter, r *http.Request) {
 		helpers.Response(w, http.StatusBadRequest, "Invalid or empty body")
 		return
 	}
-	if newRole.Name == "admin" {
-		helpers.Response(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
+	if strings.EqualFold(strings.TrimSpace(newRole.Name), "admin") {
+		helpers.Response(w, http.StatusForbidden, "Attempt to modify admin role")
 		return
 	}
 	if errs := helpers.Validate(newRole); errs != nil {
@@ -151,8 +152,8 @@ func UpdateRole(w http.ResponseWriter, r *http.Request) {
 // @router      /roles/{role} [DELETE]
 func DeleteRole(w http.ResponseWriter, r *http.Request) {
 	role := models.RoleModel{Name: r.PathValue("role")}
-	if role.Name == "admin" {
-		helpers.Response(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
+	if strings.EqualFold(strings.TrimSpace(role.Name), "admin") {
+		helpers.Response(w, http.StatusForbidden, "Attempt to delete admin role")
 		return
 	}
 	rows, err := role.Delete()
