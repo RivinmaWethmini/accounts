@@ -10,6 +10,7 @@ import AdminDashboard from "./pages/admin/dashboard";
 import { AlertProvider } from "./contexts/alert";
 import RedirectConfirm from "./pages/redirectConfirm";
 import OAuthCallback from "./pages/oauthCallback";
+import VerifyEmail from "./pages/verify";
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
           <Routes>
             <Route path="login" element={<Login />} />
             <Route path="signup" element={<Signup />} />
+            <Route path="verify" element={<VerifyEmail />} />
             <Route path="redirect/confirm" element={<RedirectConfirm />} />
             <Route path="auth/google/callback" element={<OAuthCallback />} />
             <Route

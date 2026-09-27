@@ -13,10 +13,10 @@ func (b UsersRoute) Routes() chi.Router {
 
 	r := chi.NewRouter()
 
-	r.Route("/", func(usersRoutes chi.Router) {
-		usersRoutes.With(middlewares.AuthHandler).With(middlewares.RequireRoles("admin")).Get("/", usersHandler.GetUsers)
-		usersRoutes.Post("/", usersHandler.CreateUser)
-	})
+	r.With(middlewares.AuthHandler).With(middlewares.RequireRoles("admin")).Get("/", usersHandler.GetUsers)
+	r.Post("/", usersHandler.CreateUser)
+	r.Get("/verify", usersHandler.VerifyUserEmail)
+	r.Post("/verify", usersHandler.VerifyUserEmail)
 
 	r.Route("/me", func(usersRoute chi.Router) {
 		usersRoute.Use(middlewares.AuthHandler)

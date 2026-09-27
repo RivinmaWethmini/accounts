@@ -98,6 +98,11 @@ export default function Signup() {
     });
     const result = await response.json();
     if (response.ok) {
+      const token = result?.data?.verificationToken;
+      if (token) {
+        window.location.href = `/verify?token=${encodeURIComponent(token)}`;
+        return;
+      }
       const redirect = searchParams.get("redirect");
       if (redirect) window.location.href = redirect;
       else window.location.href = "/login";

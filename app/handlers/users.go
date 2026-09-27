@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/gofrs/uuid"
 	middlewares "github.com/sliitmozilla/accounts/app/middlewares"
@@ -41,7 +42,7 @@ type createUserBody struct {
 
 // @tags        Users
 // @summary		Create user
-// @description Create user
+// @description Create user with unverified email status and issue verification token
 // @accept      json
 // @produce     json
 // @param		request body createUserBody true "Request body"
@@ -80,7 +81,59 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	helpers.Response(w, http.StatusCreated, http.StatusText(http.StatusCreated))
+	helpers.Response(w, http.StatusCreated, map[string]any{
+		"message":           "Registration successful. Please verify your email before logging in.",
+		"verificationToken": u.VerificationToken,
+	})
+}
+
+type verifyEmailBody struct {
+	Token string `json:"token" validate:"required"`
+}
+
+// @tags        Users
+// @summary     Verify user email
+// @description Verify user email using the verification token issued during registration
+// @accept      json
+// @produce     json
+// @param       token query string false "Verification token via query parameter"
+// @param       request body verifyEmailBody false "Verification token via JSON body"
+// @success     200 {object} helpers.SuccessResponseModel "Email verified successfully"
+// @failure     400 "Invalid or expired token"
+// @failure     404 "Token not found"
+// @failure     500 "Internal Server Error"
+// @router      /users/verify [POST]
+func VerifyUserEmail(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if token == "" {
+		var body verifyEmailBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			token = strings.TrimSpace(body.Token)
+		}
+	}
+
+	if token == "" {
+		helpers.Response(w, http.StatusBadRequest, "Verification token is required")
+		return
+	}
+
+	if err := (models.UserModel{}).VerifyEmail(token); err != nil {
+		if _, ok := err.(errors.NotFoundError); ok {
+			helpers.Response(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if _, ok := err.(errors.ValidationError); ok {
+			helpers.Response(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		log.Println(err.Error())
+		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		return
+	}
+
+	helpers.Response(w, http.StatusOK, "Email verified successfully. You can now log in.")
 }
 
 // @tags        Users
