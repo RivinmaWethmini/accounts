@@ -2,8 +2,6 @@ package models
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -172,14 +170,49 @@ func (u *UserModel) Insert() (int, error) {
 	u.Email = strings.TrimSpace(u.Email)
 	u.Password = strings.TrimSpace(u.Password)
 
-	// Generate a secure high-entropy verification token (32 bytes = 256 bits)
-	tokenBytes := make([]byte, 32)
-	if _, err := rand.Read(tokenBytes); err != nil {
+	// 1. Check if email is already taken by a VERIFIED user
+	var emailVerified bool
+	err = conn.QueryRow(
+		context.Background(),
+		"SELECT is_verified FROM Users WHERE LOWER(email) = LOWER($1) AND is_verified = TRUE",
+		u.Email,
+	).Scan(&emailVerified)
+	if err == nil && emailVerified {
+		return 0, apiErrors.DuplicateError{Msg: "Email already in use"}
+	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, err
 	}
-	token := hex.EncodeToString(tokenBytes)
-	expiresAt := time.Now().Add(24 * time.Hour)
-	u.VerificationToken = token
+
+	// 2. Check if username is already taken by a VERIFIED user
+	var nameVerified bool
+	err = conn.QueryRow(
+		context.Background(),
+		"SELECT is_verified FROM Users WHERE LOWER(name) = LOWER($1) AND is_verified = TRUE",
+		u.Name,
+	).Scan(&nameVerified)
+	if err == nil && nameVerified {
+		return 0, apiErrors.DuplicateError{Msg: "Username already in use"}
+	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, err
+	}
+
+	// 3. Purge any uncompleted, unverified registration attempts holding this email OR username
+	_, err = conn.Exec(
+		context.Background(),
+		"DELETE FROM Users WHERE (LOWER(email) = LOWER($1) OR LOWER(name) = LOWER($2)) AND is_verified = FALSE",
+		u.Email, u.Name,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	// 4. Generate 6-digit OTP code (10-minute validity)
+	otpCode, err := helpers.GenerateOTP()
+	if err != nil {
+		return 0, err
+	}
+	expiresAt := time.Now().Add(10 * time.Minute)
+	u.VerificationToken = otpCode
 	u.VerificationTokenExpiresAt = &expiresAt
 	u.IsVerified = false
 
@@ -373,10 +406,10 @@ func (UserModel) CreateFederatedUser(name, email string) (*UserModel, error) {
 	}, nil
 }
 
-func (UserModel) VerifyEmail(token string) error {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return apiErrors.ValidationError{Msg: "Verification token is required"}
+func (UserModel) VerifyEmail(code string, optionalEmail ...string) error {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return apiErrors.ValidationError{Msg: "Verification code is required"}
 	}
 
 	conn, err := db.ConnectDB()
@@ -389,15 +422,28 @@ func (UserModel) VerifyEmail(token string) error {
 	var isVerified bool
 	var expiresAt *time.Time
 
-	err = conn.QueryRow(
-		context.Background(),
-		"SELECT id, is_verified, verification_token_expires_at FROM Users WHERE verification_token = $1",
-		token,
-	).Scan(&userID, &isVerified, &expiresAt)
+	var email string
+	if len(optionalEmail) > 0 {
+		email = strings.TrimSpace(optionalEmail[0])
+	}
+
+	if email != "" {
+		err = conn.QueryRow(
+			context.Background(),
+			"SELECT id, is_verified, verification_token_expires_at FROM Users WHERE LOWER(email) = LOWER($1) AND verification_token = $2",
+			email, code,
+		).Scan(&userID, &isVerified, &expiresAt)
+	} else {
+		err = conn.QueryRow(
+			context.Background(),
+			"SELECT id, is_verified, verification_token_expires_at FROM Users WHERE verification_token = $1",
+			code,
+		).Scan(&userID, &isVerified, &expiresAt)
+	}
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apiErrors.NotFoundError{Msg: "Invalid or expired verification token"}
+			return apiErrors.NotFoundError{Msg: "Invalid or expired verification code"}
 		}
 		return err
 	}
@@ -407,7 +453,7 @@ func (UserModel) VerifyEmail(token string) error {
 	}
 
 	if expiresAt != nil && time.Now().After(*expiresAt) {
-		return apiErrors.ValidationError{Msg: "Verification token has expired. Please request a new verification token."}
+		return apiErrors.ValidationError{Msg: "Verification code has expired. Please request a new code."}
 	}
 
 	_, err = conn.Exec(
@@ -416,6 +462,55 @@ func (UserModel) VerifyEmail(token string) error {
 		userID,
 	)
 	return err
+}
+
+func (UserModel) ResendVerification(email string) (*UserModel, string, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil, "", apiErrors.ValidationError{Msg: "Email is required"}
+	}
+
+	conn, err := db.ConnectDB()
+	if err != nil {
+		return nil, "", err
+	}
+	defer conn.Close(context.Background())
+
+	var u UserModel
+	err = conn.QueryRow(
+		context.Background(),
+		"SELECT id, name, email, is_verified FROM Users WHERE LOWER(email) = LOWER($1)",
+		email,
+	).Scan(&u.ID, &u.Name, &u.Email, &u.IsVerified)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, "", apiErrors.NotFoundError{Msg: "User with this email not found"}
+		}
+		return nil, "", err
+	}
+
+	if u.IsVerified {
+		return nil, "", apiErrors.ValidationError{Msg: "Email is already verified"}
+	}
+
+	// Generate fresh 6-digit OTP code (10-minute validity)
+	otpCode, err := helpers.GenerateOTP()
+	if err != nil {
+		return nil, "", err
+	}
+	expiresAt := time.Now().Add(10 * time.Minute)
+
+	_, err = conn.Exec(
+		context.Background(),
+		"UPDATE Users SET verification_token = $1, verification_token_expires_at = $2, updatedat = NOW() WHERE id = $3",
+		otpCode, expiresAt, u.ID,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return &u, otpCode, nil
 }
 
 
