@@ -4,6 +4,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	authHandlers "github.com/sliitmozilla/accounts/app/handlers"
+	connectionHandler "github.com/sliitmozilla/accounts/app/handlers/connections"
 	"github.com/sliitmozilla/accounts/app/middlewares"
 )
 
@@ -22,6 +23,20 @@ func (b AuthRoutes) Routes() chi.Router {
 		authRoutes.Route("/token", func(authTokenRoutes chi.Router) {
 			authTokenRoutes.Post("/", authHandlers.GetToken)
 			authTokenRoutes.Post("/refresh", authHandlers.RefreshToken)
+		})
+
+		authRoutes.Route("/google", func(googleAuth chi.Router) {
+			googleAuth.With(middlewares.AuthHandler).Get("/url", connectionHandler.GetGoogleAuthURL)
+			googleAuth.With(middlewares.AuthHandler).Post("/url", connectionHandler.GetGoogleAuthURL)
+			googleAuth.Get("/callback", connectionHandler.CallbackGoogle)
+			googleAuth.Post("/callback", connectionHandler.CallbackGoogle)
+		})
+
+		authRoutes.Route("/auth/google", func(googleAuth chi.Router) {
+			googleAuth.With(middlewares.AuthHandler).Get("/url", connectionHandler.GetGoogleAuthURL)
+			googleAuth.With(middlewares.AuthHandler).Post("/url", connectionHandler.GetGoogleAuthURL)
+			googleAuth.Get("/callback", connectionHandler.CallbackGoogle)
+			googleAuth.Post("/callback", connectionHandler.CallbackGoogle)
 		})
 	})
 

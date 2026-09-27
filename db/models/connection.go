@@ -63,3 +63,26 @@ func (c *ConnectionModel) Delete() (int, error) {
 	)
 	return int(t.RowsAffected()), err
 }
+
+func (ConnectionModel) GetConnection(userId, provider string) (*ConnectionModel, error) {
+	conn, err := db.ConnectDB()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(context.Background())
+
+	row := conn.QueryRow(
+		context.Background(),
+		`SELECT userid, provider, provideruserid, provideraccountemail, providerusername, linkedat
+		FROM UserConnections
+		WHERE userid=$1 AND provider=$2`,
+		userId, provider,
+	)
+
+	c := ConnectionModel{}
+	if err := row.Scan(&c.UserId, &c.Provider, &c.ProviderUserId, &c.ProviderAccountEmail, &c.ProviderUserName, &c.LinkedAt); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+

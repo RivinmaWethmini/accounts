@@ -20,5 +20,13 @@ func (b ConnectionsRoute) Routes() chi.Router {
 		githubRoutes.With(middlewares.RequireLogin).Delete("/", connectionHandler.UnlinkGithub)
 	})
 
+	r.Route("/google", func(googleRoutes chi.Router) {
+		googleRoutes.Get("/url", connectionHandler.GetGoogleAuthURL)
+		googleRoutes.Post("/url", connectionHandler.GetGoogleAuthURL)
+		googleRoutes.Get("/callback", connectionHandler.CallbackGoogle)
+		googleRoutes.Post("/callback", connectionHandler.CallbackGoogle)
+		googleRoutes.With(middlewares.RequireLogin).Delete("/", connectionHandler.UnlinkGoogle)
+	})
+
 	return r
 }

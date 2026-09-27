@@ -6,6 +6,7 @@ import Card from "../components/card";
 import api from "../lib/api";
 import Input from "../components/input";
 import { useAlert } from "../contexts/alert";
+import GoogleButton from "../components/googleButton";
 
 export default function Login() {
   const [searchParams] = useSearchParams();
@@ -131,6 +132,14 @@ export default function Login() {
           <Button type="submit" className="text-xl my-2">
             Sign in
           </Button>
+
+          <div className="relative flex py-3 items-center">
+            <div className="grow border-t border-gray-300"></div>
+            <span className="shrink mx-4 text-gray-400 text-xs uppercase tracking-wider">or continue with</span>
+            <div className="grow border-t border-gray-300"></div>
+          </div>
+
+          <GoogleButton redirect={searchParams.get("redirect") || "/profile"} text="Sign in with Google" />
         </form>
       </Card>
     </main>
