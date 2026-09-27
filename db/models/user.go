@@ -233,3 +233,122 @@ func (u *UserModel) Delete() (int, error) {
 	t, err := conn.Exec(context.Background(), "DELETE FROM users WHERE id=$1", u.ID.String())
 	return int(t.RowsAffected()), err
 }
+
+func (UserModel) GetUserByEmail(email string) (*UserModel, error) {
+	conn, err := db.ConnectDB()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(context.Background())
+
+	email = strings.TrimSpace(email)
+	rows, err := conn.Query(context.Background(),
+		`SELECT u.id, u.name, u.email, array_remove(array_agg(ur.rolename), NULL) AS roles
+		FROM users u
+		LEFT JOIN userroles ur ON u.id = ur.userid
+		WHERE LOWER(u.email) = LOWER($1)
+		GROUP BY u.id`,
+		email,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return nil, apiErrors.NotFoundError{Msg: "User not found"}
+	}
+
+	u := &UserModel{Email: email}
+	var roles pgtype.Array[pgtype.Text]
+	if err := rows.Scan(&u.ID, &u.Name, &u.Email, &roles); err != nil {
+		return nil, err
+	}
+	u.Roles = []string{}
+	for _, role := range roles.Elements {
+		if role.String != "" {
+			u.Roles = append(u.Roles, role.String)
+		}
+	}
+	return u, nil
+}
+
+func (UserModel) GetUserByProvider(provider, providerUserId string) (*UserModel, error) {
+	conn, err := db.ConnectDB()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(context.Background())
+
+	rows, err := conn.Query(context.Background(),
+		`SELECT u.id, u.name, u.email, array_remove(array_agg(ur.rolename), NULL) AS roles
+		FROM users u
+		JOIN userconnections uc ON u.id = uc.userid
+		LEFT JOIN userroles ur ON u.id = ur.userid
+		WHERE uc.provider = $1 AND uc.provideruserid = $2
+		GROUP BY u.id`,
+		provider, providerUserId,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return nil, apiErrors.NotFoundError{Msg: "User not found"}
+	}
+
+	u := &UserModel{}
+	var roles pgtype.Array[pgtype.Text]
+	if err := rows.Scan(&u.ID, &u.Name, &u.Email, &roles); err != nil {
+		return nil, err
+	}
+	u.Roles = []string{}
+	for _, role := range roles.Elements {
+		if role.String != "" {
+			u.Roles = append(u.Roles, role.String)
+		}
+	}
+	return u, nil
+}
+
+func (UserModel) CreateFederatedUser(name, email string) (*UserModel, error) {
+	conn, err := db.ConnectDB()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(context.Background())
+
+	name = strings.TrimSpace(name)
+	email = strings.TrimSpace(email)
+
+	// Generate a secure random dummy password hashed with bcrypt to prevent empty/guessable password logins
+	randomSecret, err := helpers.GenerateStateToken()
+	if err != nil {
+		randomSecret = uuid.Must(uuid.NewV4()).String()
+	}
+	hashedPass := helpers.HashPassword(randomSecret)
+
+	var newID uuid.UUID
+	err = conn.QueryRow(
+		context.Background(),
+		"INSERT INTO Users (name, email, password) VALUES ($1, $2, $3) RETURNING id",
+		name, email, hashedPass,
+	).Scan(&newID)
+
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, apiErrors.DuplicateError{Msg: "Username or email already in use"}
+		}
+		return nil, err
+	}
+
+	return &UserModel{
+		ID:    newID,
+		Name:  name,
+		Email: email,
+		Roles: []string{},
+	}, nil
+}
+

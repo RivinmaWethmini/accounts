@@ -2,6 +2,13 @@ basePath: /api
 consumes:
 - application/json
 definitions:
+  connections.GoogleCallbackRequestBody:
+    properties:
+      code:
+        type: string
+      state:
+        type: string
+    type: object
   handlers.LoginRequestBody:
     properties:
       email:
@@ -241,6 +248,89 @@ paths:
       summary: Initiates the request to link an account with Github
       tags:
       - Connections
+  /connections/google:
+    delete:
+      consumes:
+      - application/json
+      description: Unlink Google account from authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not logged in or invalid token
+        "404":
+          description: User or provider not found
+        "500":
+          description: Internal Server Error
+      security:
+      - AccessToken: []
+      summary: Unlink Google account from authenticated user
+      tags:
+      - Connections
+  /connections/google/callback:
+    post:
+      consumes:
+      - application/json
+      description: Verifies PKCE and state token, exchanges code for ID token via
+        TLS, validates claims and establishes session.
+      parameters:
+      - description: Callback request body with code and state
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/connections.GoogleCallbackRequestBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Session tokens
+          schema:
+            allOf:
+            - $ref: '#/definitions/helpers.SuccessResponseModel'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: Invalid state or credentials
+        "500":
+          description: Internal Server Error
+      summary: Handles the Google OAuth 2.0 / OIDC callback
+      tags:
+      - Connections
+  /connections/google/url:
+    get:
+      consumes:
+      - application/json
+      description: Generates a secure authorization URL with PKCE S256 challenge and
+        anti-CSRF state token.
+      parameters:
+      - description: Destination path after successful authentication
+        in: query
+        name: redirect
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Authorization URL and state
+          schema:
+            allOf:
+            - $ref: '#/definitions/helpers.SuccessResponseModel'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "500":
+          description: Internal Server Error
+      summary: Initiate Google OpenID Connect / OAuth 2.0 PKCE flow
+      tags:
+      - Connections
   /login:
     post:
       consumes:
@@ -275,6 +365,8 @@ paths:
           description: Invalid request body
         "401":
           description: Invalid credentials
+        "429":
+          description: Too many login attempts
         "500":
           description: Internal Server error
       summary: Login user

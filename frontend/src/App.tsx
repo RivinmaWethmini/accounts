@@ -9,6 +9,7 @@ import PrivateRoute from "./components/privateRoute";
 import AdminDashboard from "./pages/admin/dashboard";
 import { AlertProvider } from "./contexts/alert";
 import RedirectConfirm from "./pages/redirectConfirm";
+import OAuthCallback from "./pages/oauthCallback";
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
             <Route path="login" element={<Login />} />
             <Route path="signup" element={<Signup />} />
             <Route path="redirect/confirm" element={<RedirectConfirm />} />
+            <Route path="auth/google/callback" element={<OAuthCallback />} />
             <Route
               element={
                 <div className="min-h-screen">

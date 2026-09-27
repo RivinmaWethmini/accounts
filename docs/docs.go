@@ -206,6 +206,141 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/google": {
+            "delete": {
+                "security": [
+                    {
+                        "AccessToken": []
+                    }
+                ],
+                "description": "Unlink Google account from authenticated user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Unlink Google account from authenticated user",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "401": {
+                        "description": "Not logged in or invalid token"
+                    },
+                    "404": {
+                        "description": "User or provider not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/connections/google/callback": {
+            "post": {
+                "description": "Verifies PKCE and state token, exchanges code for ID token via TLS, validates claims and establishes session.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Handles the Google OAuth 2.0 / OIDC callback",
+                "parameters": [
+                    {
+                        "description": "Callback request body with code and state",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/connections.GoogleCallbackRequestBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session tokens",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helpers.SuccessResponseModel"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid state or credentials"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/connections/google/url": {
+            "get": {
+                "description": "Generates a secure authorization URL with PKCE S256 challenge and anti-CSRF state token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Initiate Google OpenID Connect / OAuth 2.0 PKCE flow",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Destination path after successful authentication",
+                        "name": "redirect",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorization URL and state",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helpers.SuccessResponseModel"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
         "/login": {
             "post": {
                 "description": "Endpoint to log in a user with email and password\nUpon successful login user receives a pair of access token (found in response body) and refresh token (found in cookie: refreshToken)",
@@ -259,6 +394,9 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Invalid credentials"
+                    },
+                    "429": {
+                        "description": "Too many login attempts"
                     },
                     "500": {
                         "description": "Internal Server error"
@@ -1097,6 +1235,17 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "connections.GoogleCallbackRequestBody": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.LoginRequestBody": {
             "type": "object",
             "required": [
