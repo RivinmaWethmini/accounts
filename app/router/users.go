@@ -17,6 +17,7 @@ func (b UsersRoute) Routes() chi.Router {
 	r.Post("/", usersHandler.CreateUser)
 	r.Get("/verify", usersHandler.VerifyUserEmail)
 	r.Post("/verify", usersHandler.VerifyUserEmail)
+	r.Post("/resend-verification", usersHandler.ResendVerificationEmail)
 
 	r.Route("/me", func(usersRoute chi.Router) {
 		usersRoute.Use(middlewares.AuthHandler)

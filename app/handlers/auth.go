@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -231,11 +232,12 @@ func GetToken(w http.ResponseWriter, r *http.Request) {
 		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 		return
 	}
+	secureCookie := r.TLS != nil || os.Getenv("ENV") == "production"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refreshToken",
 		Value:    refreshToken,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   secureCookie,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(c.Lifespan.RefreshToken * time.Second),
 		Path:     "/",
@@ -333,11 +335,12 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	// Reset failed attempts counter on successful login
 	redisClient.Del(r.Context(), rateLimitKey)
 
+	secureCookie := r.TLS != nil || os.Getenv("ENV") == "production"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refreshToken",
 		Value:    refreshToken,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   secureCookie,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(c.Lifespan.RefreshToken * time.Second),
 		Path:     "/",
@@ -354,6 +357,16 @@ func Login(w http.ResponseWriter, r *http.Request) {
 // @failure     500 "Internal Server Error"
 // @router      /logout [POST]
 func Logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refreshToken",
+		Value:    "",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+		Path:     "/",
+	})
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refreshToken",
 		Value:    "",

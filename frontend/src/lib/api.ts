@@ -19,9 +19,12 @@ const request = async (
     urlStr.includes("/token/refresh");
 
   // unauthorized requests could be a result of expired tokens
-  if (response.status === 401 && !isAuthEndpoint) {
+  // Only attempt refresh if we previously had a token that expired
+  if (response.status === 401 && token && !isAuthEndpoint) {
     const newTokenResponse = await fetch("/api/token/refresh", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
     });
     if (newTokenResponse.ok) {
       const newTokenResult = await newTokenResponse.json();

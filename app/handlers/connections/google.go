@@ -312,11 +312,12 @@ func CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hardened session cookie
+	secureCookie := r.TLS != nil || os.Getenv("ENV") == "production"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refreshToken",
 		Value:    refreshToken,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   secureCookie,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(c.Lifespan.RefreshToken * time.Second),
 		Path:     "/",

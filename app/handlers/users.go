@@ -81,45 +81,130 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Send verification email via SMTP asynchronously
+	go func(email, name, otpCode string) {
+		if err := helpers.SendOTPEmail(email, name, otpCode); err != nil {
+			log.Printf("[SMTP Error] Failed to send OTP verification email to %s: %v\n", email, err)
+		}
+	}(u.Email, u.Name, u.VerificationToken)
+
 	helpers.Response(w, http.StatusCreated, map[string]any{
-		"message":           "Registration successful. Please verify your email before logging in.",
+		"message":           "Registration successful. A 6-digit verification code has been sent to your email.",
 		"verificationToken": u.VerificationToken,
 	})
 }
 
+type resendVerificationBody struct {
+	Email string `json:"email" validate:"required,email" example:"user@sliit.lk"`
+}
+
+// @tags        Users
+// @summary     Resend email verification OTP
+// @description Resend a new 6-digit verification OTP to the user if unverified
+// @accept      json
+// @produce     json
+// @param       request body resendVerificationBody true "Request body"
+// @success     200 {object} helpers.SuccessResponseModel "Verification email resent"
+// @failure     400 "Invalid email or already verified"
+// @failure     404 "User not found"
+// @failure     500 "Internal Server Error"
+// @router      /users/resend-verification [POST]
+func ResendVerificationEmail(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	var body resendVerificationBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		emailParam := strings.TrimSpace(r.URL.Query().Get("email"))
+		if emailParam != "" {
+			body.Email = emailParam
+		} else {
+			helpers.Response(w, http.StatusBadRequest, "Invalid or empty body")
+			return
+		}
+	}
+
+	body.Email = strings.TrimSpace(body.Email)
+	if body.Email == "" {
+		helpers.Response(w, http.StatusBadRequest, "Email is required")
+		return
+	}
+
+	user, token, err := (models.UserModel{}).ResendVerification(body.Email)
+	if err != nil {
+		if _, ok := err.(errors.NotFoundError); ok {
+			helpers.Response(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if _, ok := err.(errors.ValidationError); ok {
+			helpers.Response(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		log.Println("Error in ResendVerification:", err)
+		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		return
+	}
+
+	go func(email, name, otpCode string) {
+		if err := helpers.SendOTPEmail(email, name, otpCode); err != nil {
+			log.Printf("[SMTP Error] Failed to resend verification OTP to %s: %v\n", email, err)
+		}
+	}(user.Email, user.Name, token)
+
+	helpers.Response(w, http.StatusOK, map[string]any{
+		"message":           "Verification code sent. Please check your inbox or spam folder.",
+		"verificationToken": token,
+	})
+}
+
 type verifyEmailBody struct {
-	Token string `json:"token" validate:"required"`
+	Token string `json:"token"`
+	Code  string `json:"code"`
+	Email string `json:"email"`
 }
 
 // @tags        Users
 // @summary     Verify user email
-// @description Verify user email using the verification token issued during registration
+// @description Verify user email using the 6-digit OTP code sent to their email
 // @accept      json
 // @produce     json
-// @param       token query string false "Verification token via query parameter"
-// @param       request body verifyEmailBody false "Verification token via JSON body"
+// @param       code query string false "Verification OTP code via query parameter"
+// @param       token query string false "Verification token/code (alias) via query parameter"
+// @param       email query string false "Email address via query parameter"
+// @param       request body verifyEmailBody false "Verification code and email via JSON body"
 // @success     200 {object} helpers.SuccessResponseModel "Email verified successfully"
-// @failure     400 "Invalid or expired token"
-// @failure     404 "Token not found"
+// @failure     400 "Invalid or expired code"
+// @failure     404 "Code not found"
 // @failure     500 "Internal Server Error"
 // @router      /users/verify [POST]
 func VerifyUserEmail(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
-	token := strings.TrimSpace(r.URL.Query().Get("token"))
-	if token == "" {
-		var body verifyEmailBody
-		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
-			token = strings.TrimSpace(body.Token)
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if code == "" {
+		code = strings.TrimSpace(r.URL.Query().Get("token"))
+	}
+	email := strings.TrimSpace(r.URL.Query().Get("email"))
+
+	var body verifyEmailBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+		if code == "" {
+			if strings.TrimSpace(body.Code) != "" {
+				code = strings.TrimSpace(body.Code)
+			} else {
+				code = strings.TrimSpace(body.Token)
+			}
+		}
+		if email == "" {
+			email = strings.TrimSpace(body.Email)
 		}
 	}
 
-	if token == "" {
-		helpers.Response(w, http.StatusBadRequest, "Verification token is required")
+	if code == "" {
+		helpers.Response(w, http.StatusBadRequest, "Verification code is required")
 		return
 	}
 
-	if err := (models.UserModel{}).VerifyEmail(token); err != nil {
+	if err := (models.UserModel{}).VerifyEmail(code, email); err != nil {
 		if _, ok := err.(errors.NotFoundError); ok {
 			helpers.Response(w, http.StatusNotFound, err.Error())
 			return

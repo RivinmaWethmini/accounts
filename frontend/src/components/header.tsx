@@ -15,7 +15,11 @@ function NavigationButtons() {
 
   const logout = async () => {
     try {
-      await fetch("/api/logout", { method: "POST" });
+      await fetch("/api/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
     } catch (e) {
       // ignore
     }
