@@ -11,13 +11,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/gofrs/uuid"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/sliitmozilla/accounts/app/middlewares"
 	"github.com/sliitmozilla/accounts/config"
@@ -240,7 +237,8 @@ func GetToken(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Now().Add(c.Lifespan.RefreshToken + time.Second),
+		Expires:  time.Now().Add(c.Lifespan.RefreshToken * time.Second),
+		Path:     "/",
 	})
 	helpers.Response(w, http.StatusOK, map[string]string{"token": accessToken})
 }
@@ -319,6 +317,10 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			helpers.Response(w, http.StatusUnauthorized, "Invalid credentials")
 			return
 		}
+		if _, ok := err.(apiErrors.UnverifiedEmailError); ok {
+			helpers.Response(w, http.StatusForbidden, err.Error())
+			return
+		}
 		log.Println(err.Error())
 		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 		return
@@ -338,6 +340,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(c.Lifespan.RefreshToken * time.Second),
+		Path:     "/",
 	})
 	helpers.Response(w, http.StatusOK, map[string]string{"token": accessToken})
 }
@@ -355,22 +358,23 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 		Name:     "refreshToken",
 		Value:    "",
 		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
+		Path:     "/",
 	})
 	helpers.Response(w, http.StatusOK, http.StatusText(http.StatusOK))
 }
 
 func getAccessTokenFromRefresh(refreshToken string) (string, error) {
-	godotenv.Load()
-	jwtSecret := os.Getenv("JWT_SECRET")
-	tokenString := refreshToken
-	claims := jwt.MapClaims{}
-	if _, err := jwt.ParseWithClaims(tokenString, claims, func(*jwt.Token) (interface{}, error) {
-		return []byte(jwtSecret), nil
-	}); err != nil {
-		return "", err
+	claims, err := helpers.GetClaimsFromToken(refreshToken)
+	if err != nil {
+		return "", errors.New("invalid or expired token")
+	}
+	typ, ok := claims["typ"].(string)
+	if !ok || typ != "refresh" {
+		return "", errors.New("invalid token: expected refresh token")
 	}
 	id := uuid.FromStringOrNil(claims["id"].(string))
 	if id == uuid.Nil {
@@ -396,7 +400,6 @@ func getAccessTokenFromRefresh(refreshToken string) (string, error) {
 // @failure     500 "Internal Server Error"
 // @router      /token/refresh [POST]
 func RefreshToken(w http.ResponseWriter, r *http.Request) {
-	// todo: right now you can probably pass an access token and this endpoint would still work
 	token, err := r.Cookie("refreshToken")
 	if err != nil {
 		if err == http.ErrNoCookie {
@@ -410,14 +413,11 @@ func RefreshToken(w http.ResponseWriter, r *http.Request) {
 
 	accessToken, err := getAccessTokenFromRefresh(token.Value)
 	if err != nil {
-		if err.Error() == "invalid token" {
-			helpers.Response(w, http.StatusUnauthorized, err.Error())
-			return
-		} else if _, ok := err.(apiErrors.NotFoundError); ok {
+		if _, ok := err.(apiErrors.NotFoundError); ok {
 			helpers.Response(w, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
 			return
 		}
-		helpers.Response(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		helpers.Response(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 	helpers.Response(w, http.StatusOK, map[string]string{"token": accessToken})

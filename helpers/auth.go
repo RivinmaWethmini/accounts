@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -65,6 +66,7 @@ func GenerateTokens(id, name, email string, roles []string) (accessToken, refres
 	c := config.GetConfig()
 
 	access := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"typ":   "access",
 		"id":    id,
 		"name":  name,
 		"email": email,
@@ -78,6 +80,7 @@ func GenerateTokens(id, name, email string, roles []string) (accessToken, refres
 	}
 
 	refresh := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"typ": "refresh",
 		"id":  id,
 		"exp": time.Now().Add(c.Lifespan.RefreshToken * time.Second).Unix(),
 		"iat": time.Now().Unix(),
@@ -90,7 +93,10 @@ func GetClaimsFromToken(token string) (jwt.MapClaims, error) {
 	godotenv.Load()
 	jwtSecret := os.Getenv("JWT_SECRET")
 	claims := jwt.MapClaims{}
-	if _, err := jwt.ParseWithClaims(token, claims, func(*jwt.Token) (interface{}, error) {
+	if _, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
 		return []byte(jwtSecret), nil
 	}); err != nil {
 		return nil, err

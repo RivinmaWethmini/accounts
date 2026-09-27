@@ -19,28 +19,36 @@ const AuthContext = createContext<AuthContextProps>({
 });
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const token = localStorage.getItem("token");
-  let [user, setUser] = useState(() => {
-    let token = localStorage.getItem("token");
-    if (token) {
-      const decoded = jwt.decode(token);
-      if (!decoded) return null;
-      return decoded.payload as unknown as User;
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem("token"));
+  const [user, setUser] = useState<Partial<User> | null>(() => {
+    const initialToken = localStorage.getItem("token");
+    if (initialToken) {
+      const decoded = jwt.decode(initialToken);
+      if (decoded?.payload) return decoded.payload as unknown as User;
     }
     return null;
   });
 
   useEffect(() => {
-    if (token) {
-      localStorage.setItem("token", token);
-      const decoded = jwt.decode(token);
-      if (!decoded) return;
-      setUser(decoded.payload as unknown as User);
-    } else {
-      localStorage.removeItem("token");
-      setUser(null);
-    }
-  }, [token]);
+    const syncAuth = () => {
+      const currentToken = localStorage.getItem("token");
+      setToken(currentToken);
+      if (currentToken) {
+        const decoded = jwt.decode(currentToken);
+        if (decoded?.payload) {
+          setUser(decoded.payload as unknown as User);
+        } else {
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
+    };
+
+    window.addEventListener("storage", syncAuth);
+    syncAuth();
+    return () => window.removeEventListener("storage", syncAuth);
+  }, []);
 
   return (
     <AuthContext.Provider

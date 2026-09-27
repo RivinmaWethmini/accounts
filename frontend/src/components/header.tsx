@@ -7,7 +7,6 @@ import logo from "../assets/logo.png";
 import logoMini from "../assets/logo-small-white.png";
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
-import api from "../lib/api";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/auth";
 
@@ -15,9 +14,13 @@ function NavigationButtons() {
   const { user } = useAuth();
 
   const logout = async () => {
-    await api.post("/api/logout");
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch (e) {
+      // ignore
+    }
     localStorage.removeItem("token");
-    window.location.href = "/";
+    window.location.href = "/login";
   };
 
   return (

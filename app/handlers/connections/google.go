@@ -213,9 +213,7 @@ func CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 
 	// Check if already linked by Google sub
 	existingLinkedUser, err := models.UserModel{}.GetUserByProvider("google", claims.Subject)
-	if err == nil && existingLinkedUser != nil {
-		targetUser = existingLinkedUser
-	} else if statePayload.UserID != "" {
+	if statePayload.UserID != "" {
 		// Explicit linking initiated while authenticated
 		parsedUUID := uuid.FromStringOrNil(statePayload.UserID)
 		if parsedUUID == uuid.Nil {
@@ -227,6 +225,20 @@ func CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 			helpers.Response(w, http.StatusNotFound, "User not found")
 			return
 		}
+
+		// Security Check 1: Is this Google account already linked to another user?
+		if existingLinkedUser != nil && existingLinkedUser.ID != userByID.ID {
+			helpers.Response(w, http.StatusConflict, "This Google account is already linked to another user account")
+			return
+		}
+
+		// Security Check 2: Does the Google email belong to another existing user?
+		existingEmailUser, err := models.UserModel{}.GetUserByEmail(claims.Email)
+		if err == nil && existingEmailUser != nil && existingEmailUser.ID != userByID.ID {
+			helpers.Response(w, http.StatusConflict, "The email associated with this Google account is already registered to a different account")
+			return
+		}
+
 		targetUser = &userByID
 
 		conn := models.ConnectionModel{
@@ -243,6 +255,8 @@ func CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	} else if err == nil && existingLinkedUser != nil {
+		targetUser = existingLinkedUser
 	} else {
 		// Federated Login or Provisioning:
 		// Safe Account Linking: Check if an account already exists with this verified email

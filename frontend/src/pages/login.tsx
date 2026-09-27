@@ -16,6 +16,7 @@ export default function Login() {
   const [emailError, setEmailError] = useState("");
   const passwordRef = useRef<HTMLInputElement>(null);
   const [passwordError, setPasswordError] = useState("");
+  const [unverifiedWarning, setUnverifiedWarning] = useState(false);
 
   const validateEmail = () => {
     const input = emailRef.current;
@@ -66,6 +67,17 @@ export default function Login() {
         const displayMessage = Array.isArray(errorMessage)
           ? errorMessage[0]?.reason
           : errorMessage;
+
+        if (
+          response.status === 403 &&
+          typeof displayMessage === "string" &&
+          displayMessage.includes("Email not verified")
+        ) {
+          setUnverifiedWarning(true);
+        } else {
+          setUnverifiedWarning(false);
+        }
+
         dispatchAlert({
           type: "error",
           message: displayMessage,
@@ -104,6 +116,22 @@ export default function Login() {
               Sign up
             </Link>
           </div>
+
+          {unverifiedWarning && (
+            <div className="flex items-center justify-between gap-3 p-3 my-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-sm">
+              <div>
+                <p className="font-semibold">Account Not Verified</p>
+                <p className="text-xs text-amber-700 mt-0.5">Please verify your email before logging in.</p>
+              </div>
+              <Link
+                to="/verify"
+                className="shrink-0 bg-black text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-800"
+              >
+                Verify Now
+              </Link>
+            </div>
+          )}
+
           <div className="my-4 flex flex-col gap-4">
             <fieldset className="grid">
               <label htmlFor="email">Email</label>

@@ -19,6 +19,10 @@ func parseTokenAndGetUser(token string) (u *models.UserModel, err error) {
 	if err != nil {
 		return nil, err
 	}
+	typ, ok := claims["typ"].(string)
+	if !ok || typ != "access" {
+		return nil, errors.New("invalid token: expected access token")
+	}
 	id := uuid.FromStringOrNil(claims["id"].(string))
 	name, nameOk := claims["name"].(string)
 	email, emailOk := claims["email"].(string)

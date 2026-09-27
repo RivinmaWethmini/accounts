@@ -12,15 +12,25 @@ const request = async (
   requestOptions.headers = headers;
 
   const response = await fetch(url, requestOptions);
+  const urlStr = typeof url === "string" ? url : url.toString();
+  const isAuthEndpoint =
+    urlStr.includes("/logout") ||
+    urlStr.includes("/login") ||
+    urlStr.includes("/token/refresh");
+
   // unauthorized requests could be a result of expired tokens
-  if (response.status === 401) {
+  if (response.status === 401 && !isAuthEndpoint) {
     const newTokenResponse = await fetch("/api/token/refresh", {
       method: "POST",
     });
     if (newTokenResponse.ok) {
       const newTokenResult = await newTokenResponse.json();
-      localStorage.setItem("token", newTokenResult?.data?.token);
-      return request(url, init);
+      if (newTokenResult?.data?.token) {
+        localStorage.setItem("token", newTokenResult.data.token);
+        return request(url, init);
+      }
+    } else {
+      localStorage.removeItem("token");
     }
   }
   return response;
